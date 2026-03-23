@@ -45,11 +45,26 @@ export function useAuth() {
       setUser(user)
 
       if (user) {
-        const { data } = await supabase
+        let { data } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .single()
+
+        // プロフィールが無い場合は自動作成
+        if (!data) {
+          const { data: newProfile } = await supabase
+            .from('profiles')
+            .insert({
+              id: user.id,
+              email: user.email || '',
+              display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || '',
+            })
+            .select()
+            .single()
+          data = newProfile
+        }
+
         setProfile(data)
       }
       setLoading(false)
