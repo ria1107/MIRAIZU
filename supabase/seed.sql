@@ -1,0 +1,18 @@
+INSERT INTO account_categories (user_id, name, type, is_default, sort_order) VALUES
+  (NULL, '消耗品費', 'expense', TRUE, 1),
+  (NULL, '旅費交通費', 'expense', TRUE, 2),
+  (NULL, '通信費', 'expense', TRUE, 3),
+  (NULL, '接待交際費', 'expense', TRUE, 4),
+  (NULL, '水道光熱費', 'expense', TRUE, 5),
+  (NULL, '地代家賃', 'expense', TRUE, 6),
+  (NULL, '保険料', 'expense', TRUE, 7),
+  (NULL, '租税公課', 'expense', TRUE, 8),
+  (NULL, '減価償却費', 'expense', TRUE, 9),
+  (NULL, '広告宣伝費', 'expense', TRUE, 10),
+  (NULL, '福利厚生費', 'expense', TRUE, 11),
+  (NULL, '修繕費', 'expense', TRUE, 12),
+  (NULL, '外注費', 'expense', TRUE, 13),
+  (NULL, '会議費', 'expense', TRUE, 14),
+  (NULL, '支払手数料', 'expense', TRUE, 15),
+  (NULL, '雑費', 'expense', TRUE, 16),
+  (NULL, '売上高', 'revenue', TRUE, 100);

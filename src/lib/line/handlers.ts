@@ -11,7 +11,7 @@ export async function handleMessageEvent(event: LineWebhookEvent) {
   if (message.type === 'image') {
     await handleImageMessage(message.id, source.userId!, replyToken)
   } else if (message.type === 'text') {
-    await replyText(replyToken, 'AI財務サポーターです。領収書の画像を送信してください。')
+    await replyText(replyToken, 'MIRAIZUです。領収書の画像を送信してください。')
   }
 }
 
@@ -129,7 +129,7 @@ async function handleImageMessage(messageId: string, lineUserId: string, replyTo
 
 export async function handleFollowEvent(event: LineWebhookEvent) {
   if (!event.replyToken) return
-  await replyText(event.replyToken, 'AI財務サポーターへようこそ！\n領収書の画像を送信すると、自動で解析・仕訳を行います。\n\nまずWebアプリからアカウント連携を行ってください。')
+  await replyText(event.replyToken, 'MIRAIZUへようこそ！\n領収書の画像を送信すると、自動で解析・仕訳を行います。\n\nまずWebアプリからアカウント連携を行ってください。')
 }
 
 async function replyText(replyToken: string, text: string) {
