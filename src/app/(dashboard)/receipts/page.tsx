@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Card, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { formatCurrency, formatDate, getStatusLabel } from '@/lib/utils/format'
-import { mockReceipts } from '@/mocks/receipts'
+import { createClient } from '@/lib/supabase/client'
+import { Receipt } from '@/types/database'
 import { Search, Filter, Plus } from 'lucide-react'
 
 const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
@@ -14,14 +16,47 @@ const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'error' 
 }
 
 export default function ReceiptsPage() {
+  const [receipts, setReceipts] = useState<Receipt[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
 
-  const filtered = mockReceipts.filter((r) => {
+  useEffect(() => {
+    async function fetchReceipts() {
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('receipts')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          console.error('領収書取得エラー:', error)
+          return
+        }
+        setReceipts(data || [])
+      } catch (e) {
+        console.error('領収書取得エラー:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchReceipts()
+  }, [])
+
+  const filtered = receipts.filter((r) => {
     if (search && !r.vendor_name?.includes(search) && !r.description?.includes(search)) return false
     if (statusFilter && r.status !== statusFilter) return false
     return true
   })
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <LoadingSpinner />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -85,7 +120,9 @@ export default function ReceiptsPage() {
             </tbody>
           </table>
           {filtered.length === 0 && (
-            <div className="text-center py-12 text-gray-500">該当する領収書がありません</div>
+            <div className="text-center py-12 text-gray-500">
+              {receipts.length === 0 ? 'まだ領収書がありません。LINEから画像を送信してください。' : '該当する領収書がありません'}
+            </div>
           )}
         </div>
       </Card>
