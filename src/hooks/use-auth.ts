@@ -59,6 +59,8 @@ export function useAuth() {
               id: user.id,
               email: user.email || '',
               display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || '',
+              company_name: null,
+              fiscal_year_start: 4,
             })
             .select()
             .single()
