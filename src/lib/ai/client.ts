@@ -3,6 +3,7 @@ import { RECEIPT_ANALYSIS_PROMPT } from './prompts'
 import { mockAnalyzeReceipt } from '@/mocks/openai-response'
 
 const USE_MOCKS = process.env.USE_MOCKS === 'true'
+const MAX_RETRIES = 3
 
 export async function analyzeReceipt(imageBase64: string): Promise<ReceiptAnalysisResult> {
   if (USE_MOCKS) {
@@ -10,10 +11,30 @@ export async function analyzeReceipt(imageBase64: string): Promise<ReceiptAnalys
     return mockAnalyzeReceipt()
   }
 
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`Gemini解析 試行${attempt}/${MAX_RETRIES}`)
+      const result = await callGeminiAPI(imageBase64)
+      console.log(`Gemini解析 成功 (試行${attempt})`)
+      return result
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e))
+      console.error(`Gemini解析 失敗 (試行${attempt}):`, lastError.message)
+      if (attempt < MAX_RETRIES) {
+        // リトライ前に少し待機
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+  }
+
+  throw lastError!
+}
+
+async function callGeminiAPI(imageBase64: string): Promise<ReceiptAnalysisResult> {
   const apiKey = process.env.GEMINI_API_KEY!
   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
-
-  // Gemini REST API を直接呼び出し（SDK のBase64処理問題を回避）
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
   const requestBody = {
@@ -36,8 +57,6 @@ export async function analyzeReceipt(imageBase64: string): Promise<ReceiptAnalys
     },
   }
 
-  console.log('Gemini API呼び出し:', { model, imageSize: imageBase64.length })
-
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -47,20 +66,21 @@ export async function analyzeReceipt(imageBase64: string): Promise<ReceiptAnalys
   if (!response.ok) {
     const errorText = await response.text()
     console.error('Gemini APIエラー:', response.status, errorText)
-    throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
+    throw new Error(`Gemini API error: ${response.status}`)
   }
 
   const data = await response.json()
-  console.log('Gemini API応答取得')
-
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) {
-    console.error('Gemini応答にテキストなし:', JSON.stringify(data))
+    console.error('Gemini応答にテキストなし:', JSON.stringify(data).substring(0, 300))
     throw new Error('No text in Gemini response')
   }
 
-  console.log('Gemini応答テキスト:', text.substring(0, 500))
+  console.log('Gemini応答:', text.substring(0, 200))
+  return parseGeminiJSON(text)
+}
 
+function parseGeminiJSON(text: string): ReceiptAnalysisResult {
   // JSONブロックの抽出（```json ... ``` で囲まれている場合に対応）
   let jsonText = text.trim()
   const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -73,8 +93,8 @@ export async function analyzeReceipt(imageBase64: string): Promise<ReceiptAnalys
   } catch {
     // 不正なJSON文字を除去して再試行
     const cleaned = jsonText
-      .replace(/[\x00-\x1F\x7F]/g, '') // 制御文字を除去
-      .replace(/,\s*}/g, '}')           // 末尾カンマを除去
+      .replace(/[\x00-\x1F\x7F]/g, '')
+      .replace(/,\s*}/g, '}')
       .replace(/,\s*]/g, ']')
     return JSON.parse(cleaned)
   }
