@@ -53,15 +53,16 @@ export function useAuth() {
 
         // プロフィールが無い場合は自動作成
         if (!data) {
-          const { data: newProfile } = await supabase
-            .from('profiles')
-            .insert({
-              id: user.id,
-              email: user.email || '',
-              display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || '',
-              company_name: null,
-              fiscal_year_start: 4,
-            })
+          const insertData = {
+            id: user.id,
+            email: user.email || '',
+            display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || '',
+            company_name: null,
+            fiscal_year_start: 4,
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: newProfile } = await (supabase.from('profiles') as any)
+            .insert(insertData)
             .select()
             .single()
           data = newProfile
