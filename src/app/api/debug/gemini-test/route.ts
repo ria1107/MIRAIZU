@@ -48,21 +48,43 @@ export async function GET() {
     results.imageSize = imgBuffer.length
     results.imageBase64Length = imgBuffer.toString('base64').length
 
-    // Step 3: Gemini解析
+    // Step 3: Gemini解析（生テキストも確認）
     const startTime = Date.now()
+    const apiKey = process.env.GEMINI_API_KEY!
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+    const { RECEIPT_ANALYSIS_PROMPT } = await import('@/lib/ai/prompts')
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    const geminiRes = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { text: RECEIPT_ANALYSIS_PROMPT },
+          { inline_data: { mime_type: 'image/jpeg', data: imgBuffer.toString('base64') } },
+        ]}],
+        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1000 },
+      }),
+    })
+    const geminiData = await geminiRes.json()
+    const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
+    results.geminiRawResponse = {
+      status: geminiRes.status,
+      rawText: rawText,
+      finishReason: geminiData.candidates?.[0]?.finishReason,
+      elapsed: `${Date.now() - startTime}ms`,
+    }
+
+    // パース試行
     try {
       const analysis = await analyzeReceipt(imgBuffer.toString('base64'))
       results.analysis = {
         success: true,
-        elapsed: `${Date.now() - startTime}ms`,
         result: analysis,
       }
     } catch (e) {
       results.analysis = {
         success: false,
-        elapsed: `${Date.now() - startTime}ms`,
         error: e instanceof Error ? e.message : String(e),
-        stack: e instanceof Error ? e.stack?.split('\n').slice(0, 8) : undefined,
       }
     }
   } catch (e) {

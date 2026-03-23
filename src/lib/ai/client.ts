@@ -59,5 +59,23 @@ export async function analyzeReceipt(imageBase64: string): Promise<ReceiptAnalys
     throw new Error('No text in Gemini response')
   }
 
-  return JSON.parse(text)
+  console.log('Gemini応答テキスト:', text.substring(0, 500))
+
+  // JSONブロックの抽出（```json ... ``` で囲まれている場合に対応）
+  let jsonText = text.trim()
+  const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonText = jsonMatch[1].trim()
+  }
+
+  try {
+    return JSON.parse(jsonText)
+  } catch {
+    // 不正なJSON文字を除去して再試行
+    const cleaned = jsonText
+      .replace(/[\x00-\x1F\x7F]/g, '') // 制御文字を除去
+      .replace(/,\s*}/g, '}')           // 末尾カンマを除去
+      .replace(/,\s*]/g, ']')
+    return JSON.parse(cleaned)
+  }
 }
