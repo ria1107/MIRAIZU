@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { analyzeReceipt } from '@/lib/ai/client'
 
 export const maxDuration = 60
 
@@ -16,59 +17,56 @@ export async function GET() {
     },
   }
 
-  // Test 1: テキスト生成テスト (REST API直接呼び出し)
+  // Test 1: 実際のanalyzeReceipt関数で画像解析テスト
+  // (Wikipediaのサンプルレシート画像を使用)
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: 'Say "Hello" in Japanese. Reply with just the word.' }] }],
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      results.textTest = { success: false, status: res.status, error: data }
+    // テスト用のサンプル画像をダウンロード
+    const sampleImageUrl = 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/ReceiptSwiss.jpg/220px-ReceiptSwiss.jpg'
+    const imgRes = await fetch(sampleImageUrl)
+    if (!imgRes.ok) {
+      results.imageDownload = { success: false, status: imgRes.status }
     } else {
-      results.textTest = {
+      const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+      const imgBase64 = imgBuffer.toString('base64')
+      results.imageDownload = {
         success: true,
-        response: data.candidates?.[0]?.content?.parts?.[0]?.text,
+        size: imgBuffer.length,
+        base64Length: imgBase64.length,
+        base64Preview: imgBase64.substring(0, 50) + '...',
+      }
+
+      // analyzeReceipt関数を実際に呼び出し
+      const startTime = Date.now()
+      const analysis = await analyzeReceipt(imgBase64)
+      const elapsed = Date.now() - startTime
+      results.analyzeReceipt = {
+        success: true,
+        elapsed: `${elapsed}ms`,
+        result: analysis,
       }
     }
   } catch (e) {
-    results.textTest = { success: false, error: e instanceof Error ? e.message : String(e) }
+    results.analyzeReceipt = {
+      success: false,
+      error: e instanceof Error ? e.message : String(e),
+      stack: e instanceof Error ? e.stack?.split('\n').slice(0, 5) : undefined,
+    }
   }
 
-  // Test 2: 画像解析テスト - 1x1ピクセルの有効なPNG画像
+  // Test 2: LINE画像取得テスト（最新のメッセージIDがあれば）
   try {
-    // 最小限の有効なPNG (1x1 赤ピクセル)
-    const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: 'What color is this pixel? Reply with JSON: {"color": "..."}' },
-            { inline_data: { mime_type: 'image/png', data: pngBase64 } },
-          ],
-        }],
-        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 100 },
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      results.imageTest = { success: false, status: res.status, error: data }
-    } else {
-      results.imageTest = {
-        success: true,
-        response: data.candidates?.[0]?.content?.parts?.[0]?.text,
-      }
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (supabaseUrl && supabaseKey) {
+      const dbRes = await fetch(
+        `${supabaseUrl}/rest/v1/receipts?select=id,status,line_message_id,created_at&order=created_at.desc&limit=5`,
+        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+      )
+      const receipts = await dbRes.json()
+      results.recentReceipts = receipts
     }
   } catch (e) {
-    results.imageTest = { success: false, error: e instanceof Error ? e.message : String(e) }
+    results.recentReceipts = { error: e instanceof Error ? e.message : String(e) }
   }
 
   return NextResponse.json(results, { status: 200 })
