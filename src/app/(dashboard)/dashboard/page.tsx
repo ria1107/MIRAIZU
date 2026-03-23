@@ -55,7 +55,7 @@ export default function DashboardPage() {
     .filter(r => r.receipt_type === 'expense')
     .reduce((sum, r) => sum + (r.amount || 0), 0)
   const totalRevenue = analyzedReceipts
-    .filter(r => r.receipt_type === 'revenue')
+    .filter(r => r.receipt_type === 'sales')
     .reduce((sum, r) => sum + (r.amount || 0), 0)
   const totalAll = analyzedReceipts.reduce((sum, r) => sum + (r.amount || 0), 0)
 
