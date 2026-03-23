@@ -1,79 +1,74 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export const maxDuration = 60
 
 export async function GET() {
+  const apiKey = process.env.GEMINI_API_KEY!
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
   const results: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
     env: {
-      GEMINI_API_KEY_set: !!process.env.GEMINI_API_KEY,
-      GEMINI_API_KEY_length: process.env.GEMINI_API_KEY?.length || 0,
-      GEMINI_MODEL: process.env.GEMINI_MODEL || '(not set, default: gemini-2.5-flash)',
+      GEMINI_API_KEY_set: !!apiKey,
+      GEMINI_API_KEY_length: apiKey?.length || 0,
+      GEMINI_MODEL: model,
       USE_MOCKS: process.env.USE_MOCKS,
       LINE_CHANNEL_ACCESS_TOKEN_set: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
     },
   }
 
-  // Test 1: テキスト生成テスト
+  // Test 1: テキスト生成テスト (REST API直接呼び出し)
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'Say "Hello" in Japanese. Reply with just the word.' }] }],
+      }),
     })
-    const textResult = await model.generateContent('Say "Hello" in Japanese. Reply with just the word.')
-    results.textTest = {
-      success: true,
-      response: textResult.response.text(),
+    const data = await res.json()
+    if (!res.ok) {
+      results.textTest = { success: false, status: res.status, error: data }
+    } else {
+      results.textTest = {
+        success: true,
+        response: data.candidates?.[0]?.content?.parts?.[0]?.text,
+      }
     }
   } catch (e) {
-    results.textTest = {
-      success: false,
-      error: e instanceof Error ? e.message : String(e),
-    }
+    results.textTest = { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 
-  // Test 2: 小さなテスト画像（1x1 白ピクセルのJPEG）で画像解析テスト
+  // Test 2: 画像解析テスト - 1x1ピクセルの有効なPNG画像
   try {
-    // 最小限のJPEG画像（1x1ピクセル）
-    const tinyJpegBase64 = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYI4Q/SFhSRJGipKaxJgQsJdLwFWRhY2JygpKTo2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwA='
+    // 最小限の有効なPNG (1x1 赤ピクセル)
+    const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        maxOutputTokens: 200,
-      },
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: 'What color is this pixel? Reply with JSON: {"color": "..."}' },
+            { inline_data: { mime_type: 'image/png', data: pngBase64 } },
+          ],
+        }],
+        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 100 },
+      }),
     })
-    const imageResult = await model.generateContent([
-      'This is a test image. Reply with JSON: {"test": "ok"}',
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: tinyJpegBase64,
-        },
-      },
-    ])
-    results.imageTest = {
-      success: true,
-      response: imageResult.response.text(),
+    const data = await res.json()
+    if (!res.ok) {
+      results.imageTest = { success: false, status: res.status, error: data }
+    } else {
+      results.imageTest = {
+        success: true,
+        response: data.candidates?.[0]?.content?.parts?.[0]?.text,
+      }
     }
   } catch (e) {
-    results.imageTest = {
-      success: false,
-      error: e instanceof Error ? e.message : String(e),
-      stack: e instanceof Error ? e.stack?.split('\n').slice(0, 5) : undefined,
-    }
-  }
-
-  // Test 3: @google/generative-ai パッケージバージョン確認
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pkg = require('@google/generative-ai/package.json')
-    results.sdkVersion = pkg.version
-  } catch {
-    results.sdkVersion = 'could not determine'
+    results.imageTest = { success: false, error: e instanceof Error ? e.message : String(e) }
   }
 
   return NextResponse.json(results, { status: 200 })
