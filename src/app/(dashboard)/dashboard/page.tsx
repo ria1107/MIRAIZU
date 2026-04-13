@@ -25,7 +25,7 @@ export default function DashboardPage() {
       controller.abort()
       setError('接続タイムアウト。ページを再読み込みしてください。')
       setLoading(false)
-    }, 10000)
+    }, 30000)
 
     async function fetchReceipts() {
       try {
