@@ -1,28 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { USE_MOCKS } from '@/lib/utils/constants'
-import { mockReceipts } from '@/mocks/receipts'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function GET(request: NextRequest) {
-  if (USE_MOCKS) {
+  try {
+    // まずサーバーサイドでユーザーセッションを確認
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // admin clientでRLSバイパスして取得（確実にデータが返る）
+    const admin = createAdminClient()
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const search = searchParams.get('search')
-    let results = [...mockReceipts]
-    if (status) results = results.filter(r => r.status === status)
-    if (search) results = results.filter(r => r.vendor_name?.includes(search) || r.description?.includes(search))
-    return NextResponse.json({ receipts: results, total: results.length, page: 1, limit: 20, totalPages: 1 })
+
+    let query = admin
+      .from('receipts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+
+    if (status) {
+      query = query.eq('status', status)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('レシート取得エラー:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    let receipts = data || []
+
+    // 検索フィルタ（クライアント側）
+    if (search) {
+      receipts = receipts.filter(
+        r => r.vendor_name?.includes(search) || r.description?.includes(search)
+      )
+    }
+
+    return NextResponse.json({ receipts, total: receipts.length })
+  } catch (e) {
+    console.error('API receipts error:', e)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
-
-  // TODO: Supabase実装
-  return NextResponse.json({ receipts: [], total: 0, page: 1, limit: 20, totalPages: 0 })
-}
-
-export async function POST(request: NextRequest) {
-  if (USE_MOCKS) {
-    const body = await request.json()
-    return NextResponse.json({ ...body, id: crypto.randomUUID(), status: 'pending', created_at: new Date().toISOString() }, { status: 201 })
-  }
-
-  // TODO: Supabase実装
-  return NextResponse.json({ error: '未実装' }, { status: 501 })
 }

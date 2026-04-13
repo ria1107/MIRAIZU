@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { formatCurrency, formatDate, getStatusLabel } from '@/lib/utils/format'
-import { createClient } from '@/lib/supabase/client'
 import { Receipt } from '@/types/database'
 import { Search, Filter, Plus } from 'lucide-react'
 
@@ -23,42 +22,28 @@ export default function ReceiptsPage() {
   const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setFetchError('接続タイムアウト。ページを再読み込みしてください。')
-      setLoading(false)
-    }, 30000)
-
     async function fetchReceipts() {
       try {
-        const supabase = createClient()
-
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
+        const res = await fetch('/api/receipts')
+        if (res.status === 401) {
           window.location.href = '/login'
           return
         }
-
-        const { data, error } = await supabase
-          .from('receipts')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (error) {
-          console.error('領収書取得エラー:', error)
-          setFetchError(`取得エラー: ${error.message}`)
+        if (!res.ok) {
+          const data = await res.json()
+          setFetchError(data.error || 'データ取得に失敗しました')
           return
         }
-        setReceipts(data || [])
+        const data = await res.json()
+        setReceipts(data.receipts || [])
       } catch (e) {
         console.error('領収書取得エラー:', e)
-        setFetchError('データの取得に失敗しました。')
+        setFetchError('サーバーへの接続に失敗しました。')
       } finally {
-        clearTimeout(timer)
         setLoading(false)
       }
     }
     fetchReceipts()
-    return () => clearTimeout(timer)
   }, [])
 
   const filtered = receipts.filter((r) => {

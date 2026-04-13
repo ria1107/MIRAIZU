@@ -5,7 +5,6 @@ import { Card, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { formatCurrency, formatDate, getStatusLabel } from '@/lib/utils/format'
-import { createClient } from '@/lib/supabase/client'
 import { Receipt } from '@/types/database'
 import { TrendingUp, TrendingDown, Receipt as ReceiptIcon, Wallet } from 'lucide-react'
 import Link from 'next/link'
@@ -20,47 +19,28 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      controller.abort()
-      setError('接続タイムアウト。ページを再読み込みしてください。')
-      setLoading(false)
-    }, 30000)
-
     async function fetchReceipts() {
       try {
-        const supabase = createClient()
-
-        // セッション確認
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
+        const res = await fetch('/api/receipts')
+        if (res.status === 401) {
           window.location.href = '/login'
           return
         }
-
-        const { data, error } = await supabase
-          .from('receipts')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (error) {
-          console.error('データ取得エラー:', error)
-          setError(`データ取得エラー: ${error.message}`)
+        if (!res.ok) {
+          const data = await res.json()
+          setError(data.error || 'データ取得に失敗しました')
           return
         }
-        setReceipts(data || [])
+        const data = await res.json()
+        setReceipts(data.receipts || [])
       } catch (e) {
-        if ((e as Error)?.name !== 'AbortError') {
-          console.error('データ取得エラー:', e)
-          setError('データの取得に失敗しました。ページを再読み込みしてください。')
-        }
+        console.error('データ取得エラー:', e)
+        setError('サーバーへの接続に失敗しました。ページを再読み込みしてください。')
       } finally {
-        clearTimeout(timer)
         setLoading(false)
       }
     }
     fetchReceipts()
-    return () => { controller.abort(); clearTimeout(timer) }
   }, [])
 
   if (loading) {
