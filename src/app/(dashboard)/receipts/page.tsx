@@ -18,13 +18,26 @@ const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'error' 
 export default function ReceiptsPage() {
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setFetchError('接続タイムアウト。ページを再読み込みしてください。')
+      setLoading(false)
+    }, 10000)
+
     async function fetchReceipts() {
       try {
         const supabase = createClient()
+
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          window.location.href = '/login'
+          return
+        }
+
         const { data, error } = await supabase
           .from('receipts')
           .select('*')
@@ -32,16 +45,20 @@ export default function ReceiptsPage() {
 
         if (error) {
           console.error('領収書取得エラー:', error)
+          setFetchError(`取得エラー: ${error.message}`)
           return
         }
         setReceipts(data || [])
       } catch (e) {
         console.error('領収書取得エラー:', e)
+        setFetchError('データの取得に失敗しました。')
       } finally {
+        clearTimeout(timer)
         setLoading(false)
       }
     }
     fetchReceipts()
+    return () => clearTimeout(timer)
   }, [])
 
   const filtered = receipts.filter((r) => {
@@ -52,8 +69,24 @@ export default function ReceiptsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
         <LoadingSpinner />
+        <p className="text-sm text-gray-500">データを読み込んでいます...</p>
+      </div>
+    )
+  }
+
+  if (fetchError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg text-center">
+          <p className="font-medium">エラーが発生しました</p>
+          <p className="text-sm mt-1">{fetchError}</p>
+        </div>
+        <button onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+          再読み込み
+        </button>
       </div>
     )
   }
