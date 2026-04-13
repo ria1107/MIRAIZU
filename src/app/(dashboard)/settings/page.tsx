@@ -1,26 +1,151 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, Link as LinkIcon } from 'lucide-react'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
+import { Badge } from '@/components/ui/badge'
+import { Save, Link as LinkIcon, Unlink, Copy, Check, RefreshCw } from 'lucide-react'
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState({
-    display_name: 'デモユーザー',
-    company_name: '株式会社サンプル',
-    email: 'demo@example.com',
+    display_name: '',
+    company_name: '',
+    email: '',
     fiscal_year_start: '4',
   })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  // LINE連携
+  const [lineConnected, setLineConnected] = useState(false)
+  const [lineConnection, setLineConnection] = useState<{ display_name: string; connected_at: string } | null>(null)
+  const [connectCode, setConnectCode] = useState<string | null>(null)
+  const [codeExpiry, setCodeExpiry] = useState<string | null>(null)
+  const [generatingCode, setGeneratingCode] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [profileRes, lineRes] = await Promise.all([
+          fetch('/api/profile'),
+          fetch('/api/line/connect'),
+        ])
+
+        if (profileRes.status === 401) {
+          window.location.href = '/login'
+          return
+        }
+
+        if (profileRes.ok) {
+          const { profile: p, email } = await profileRes.json()
+          if (p) {
+            setProfile({
+              display_name: p.display_name || '',
+              company_name: p.company_name || '',
+              email: email || p.email || '',
+              fiscal_year_start: String(p.fiscal_year_start || 4),
+            })
+          }
+        }
+
+        if (lineRes.ok) {
+          const data = await lineRes.json()
+          setLineConnected(data.connected)
+          setLineConnection(data.connection || null)
+        }
+      } catch (e) {
+        console.error('データ取得エラー:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setProfile(prev => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveMessage(null)
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile),
+      })
+      if (res.ok) {
+        setSaveMessage('保存しました')
+        setTimeout(() => setSaveMessage(null), 3000)
+      } else {
+        setSaveMessage('保存に失敗しました')
+      }
+    } catch {
+      setSaveMessage('保存に失敗しました')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleGenerateCode = async () => {
+    setGeneratingCode(true)
+    setCopied(false)
+    try {
+      const res = await fetch('/api/line/connect', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setConnectCode(data.code)
+        setCodeExpiry(data.expiresAt)
+      }
+    } catch (e) {
+      console.error('コード生成エラー:', e)
+    } finally {
+      setGeneratingCode(false)
+    }
+  }
+
+  const handleCopyCode = () => {
+    if (connectCode) {
+      navigator.clipboard.writeText(connectCode)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm('LINE連携を解除しますか？')) return
+    setDisconnecting(true)
+    try {
+      const res = await fetch('/api/line/connect', { method: 'DELETE' })
+      if (res.ok) {
+        setLineConnected(false)
+        setLineConnection(null)
+      }
+    } catch (e) {
+      console.error('連携解除エラー:', e)
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <LoadingSpinner />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900">設定</h2>
 
+      {/* プロフィール */}
       <Card>
         <CardTitle>プロフィール</CardTitle>
         <div className="mt-4 space-y-4 max-w-lg">
@@ -48,27 +173,95 @@ export default function SettingsPage() {
               ))}
             </select>
           </div>
-          <Button><Save className="w-4 h-4 mr-1" />保存</Button>
+          <div className="flex items-center gap-3">
+            <Button onClick={handleSave} disabled={saving}>
+              <Save className="w-4 h-4 mr-1" />{saving ? '保存中...' : '保存'}
+            </Button>
+            {saveMessage && (
+              <span className={`text-sm ${saveMessage.includes('失敗') ? 'text-red-600' : 'text-green-600'}`}>
+                {saveMessage}
+              </span>
+            )}
+          </div>
         </div>
       </Card>
 
+      {/* LINE連携 */}
       <Card>
-        <CardTitle>LINE連携</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>LINE連携</CardTitle>
+          {lineConnected && <Badge variant="success">連携済み</Badge>}
+        </div>
         <div className="mt-4">
-          <p className="text-sm text-gray-600 mb-4">
-            LINEアカウントを連携すると、LINEから領収書画像を送信して自動解析できます。
-          </p>
-          <Button variant="outline"><LinkIcon className="w-4 h-4 mr-1" />LINE連携を開始</Button>
+          {lineConnected ? (
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-sm text-green-800">
+                  <strong>LINE連携中</strong> — LINEから領収書画像を送信すると自動解析されます。
+                </p>
+                {lineConnection?.connected_at && (
+                  <p className="text-xs text-green-600 mt-1">
+                    連携日: {new Date(lineConnection.connected_at).toLocaleDateString('ja-JP')}
+                  </p>
+                )}
+              </div>
+              <Button variant="outline" onClick={handleDisconnect} disabled={disconnecting}>
+                <Unlink className="w-4 h-4 mr-1" />{disconnecting ? '解除中...' : '連携を解除'}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                LINEアカウントを連携すると、LINEから領収書画像を送信して自動解析できます。
+              </p>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-900 text-sm mb-2">連携手順</h4>
+                <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                  <li>下のボタンで連携コードを発行</li>
+                  <li>LINEで「MIRAIZU」を友だち追加</li>
+                  <li>発行された6桁のコードをLINEで送信</li>
+                </ol>
+              </div>
+
+              {connectCode ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-600 mb-2">連携コード（10分間有効）</p>
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="text-3xl font-mono font-bold tracking-widest text-gray-900">{connectCode}</span>
+                    <button onClick={handleCopyCode} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                      {copied ? <Check className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5 text-gray-500" />}
+                    </button>
+                  </div>
+                  {codeExpiry && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      有効期限: {new Date(codeExpiry).toLocaleTimeString('ja-JP')}
+                    </p>
+                  )}
+                  <button onClick={handleGenerateCode} className="mt-3 text-sm text-blue-600 hover:text-blue-500 flex items-center gap-1 mx-auto">
+                    <RefreshCw className="w-3 h-3" />新しいコードを発行
+                  </button>
+                </div>
+              ) : (
+                <Button onClick={handleGenerateCode} disabled={generatingCode}>
+                  <LinkIcon className="w-4 h-4 mr-1" />{generatingCode ? 'コード生成中...' : '連携コードを発行'}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </Card>
 
+      {/* Google Drive連携 */}
       <Card>
         <CardTitle>Google Drive連携</CardTitle>
         <div className="mt-4">
           <p className="text-sm text-gray-600 mb-4">
-            解析済みの領収書画像をGoogle Driveに自動保存します。
+            解析済みの領収書画像をGoogle Driveに自動保存します。（準備中）
           </p>
-          <Button variant="outline"><LinkIcon className="w-4 h-4 mr-1" />Google Drive連携を設定</Button>
+          <Button variant="outline" disabled>
+            <LinkIcon className="w-4 h-4 mr-1" />Google Drive連携を設定
+          </Button>
         </div>
       </Card>
     </div>

@@ -11,7 +11,13 @@ export async function handleMessageEvent(event: LineWebhookEvent) {
   if (message.type === 'image') {
     await handleImageMessage(message.id, source.userId!, replyToken)
   } else if (message.type === 'text') {
-    await replyText(replyToken, 'MIRAIZUです。領収書の画像を送信してください。')
+    const text = message.text?.trim() || ''
+    // 6桁の数字 → 連携コード処理
+    if (/^\d{6}$/.test(text)) {
+      await handleConnectCode(text, source.userId!, replyToken)
+    } else {
+      await replyText(replyToken, 'MIRAIZUです。\n\n・領収書の画像を送信 → 自動解析\n・6桁の連携コードを送信 → アカウント連携')
+    }
   }
 }
 
@@ -124,6 +130,64 @@ async function handleImageMessage(messageId: string, lineUserId: string, replyTo
     }
 
     await replyText(replyToken, '領収書の処理中にエラーが発生しました。もう一度お試しください。')
+  }
+}
+
+async function handleConnectCode(code: string, lineUserId: string, replyToken: string) {
+  try {
+    const supabase = createAdminClient()
+
+    // コードを検索
+    const { data: codeRecord } = await supabase
+      .from('line_connect_codes')
+      .select('user_id, expires_at, used')
+      .eq('code', code)
+      .eq('used', false)
+      .single()
+
+    if (!codeRecord) {
+      await replyText(replyToken, '連携コードが見つかりません。Webアプリで新しいコードを発行してください。')
+      return
+    }
+
+    // 有効期限チェック
+    if (new Date(codeRecord.expires_at) < new Date()) {
+      await replyText(replyToken, '連携コードの有効期限が切れています。Webアプリで新しいコードを発行してください。')
+      return
+    }
+
+    // 既存の連携を無効化
+    await supabase
+      .from('line_connections')
+      .update({ is_active: false })
+      .eq('user_id', codeRecord.user_id)
+
+    // LINE連携を登録
+    const { error: connError } = await supabase
+      .from('line_connections')
+      .upsert({
+        user_id: codeRecord.user_id,
+        line_user_id: lineUserId,
+        display_name: 'LINEユーザー',
+        is_active: true,
+      }, { onConflict: 'user_id' })
+
+    if (connError) {
+      console.error('LINE連携登録エラー:', connError)
+      await replyText(replyToken, '連携処理中にエラーが発生しました。')
+      return
+    }
+
+    // コードを使用済みに
+    await supabase
+      .from('line_connect_codes')
+      .update({ used: true })
+      .eq('code', code)
+
+    await replyText(replyToken, 'アカウント連携が完了しました！🎉\n\n領収書の画像を送信すると、自動で解析・登録されます。')
+  } catch (error) {
+    console.error('連携コード処理エラー:', error)
+    await replyText(replyToken, '連携処理中にエラーが発生しました。もう一度お試しください。')
   }
 }
 
