@@ -156,21 +156,21 @@ async function handleConnectCode(code: string, lineUserId: string, replyToken: s
       return
     }
 
-    // 既存の連携を無効化
+    // 既存の連携を削除
     await supabase
       .from('line_connections')
-      .update({ is_active: false })
+      .delete()
       .eq('user_id', codeRecord.user_id)
 
-    // LINE連携を登録
+    // LINE連携を新規登録
     const { error: connError } = await supabase
       .from('line_connections')
-      .upsert({
+      .insert({
         user_id: codeRecord.user_id,
         line_user_id: lineUserId,
         display_name: 'LINEユーザー',
         is_active: true,
-      }, { onConflict: 'user_id' })
+      })
 
     if (connError) {
       console.error('LINE連携登録エラー:', connError)
