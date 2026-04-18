@@ -33,8 +33,9 @@ export async function analyzeReceipt(imageBase64: string): Promise<ReceiptAnalys
 }
 
 async function callGeminiAPI(imageBase64: string): Promise<ReceiptAnalysisResult> {
-  const apiKey = process.env.GEMINI_API_KEY!
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const apiKey = process.env.GEMINI_API_KEY!.trim()
+  const model = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim()
+  console.log('Gemini model:', JSON.stringify(model))
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
   const requestBody = {
@@ -83,19 +84,37 @@ async function callGeminiAPI(imageBase64: string): Promise<ReceiptAnalysisResult
 function parseGeminiJSON(text: string): ReceiptAnalysisResult {
   // JSONブロックの抽出（```json ... ``` で囲まれている場合に対応）
   let jsonText = text.trim()
+
+  // Markdownコードブロックを除去
   const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (jsonMatch) {
     jsonText = jsonMatch[1].trim()
   }
 
+  // JSONオブジェクトを { ... } で抽出（前後の余分なテキストを除去）
+  const objectMatch = jsonText.match(/\{[\s\S]*\}/)
+  if (objectMatch) {
+    jsonText = objectMatch[0]
+  }
+
   try {
     return JSON.parse(jsonText)
-  } catch {
+  } catch (e1) {
+    console.error('JSONパース1回目失敗:', (e1 as Error).message, 'テキスト先頭100文字:', jsonText.substring(0, 100))
+
     // 不正なJSON文字を除去して再試行
-    const cleaned = jsonText
-      .replace(/[\x00-\x1F\x7F]/g, '')
-      .replace(/,\s*}/g, '}')
-      .replace(/,\s*]/g, ']')
-    return JSON.parse(cleaned)
+    let cleaned = jsonText
+      .replace(/[\x00-\x1F\x7F]/g, ' ')  // 制御文字をスペースに
+      .replace(/,\s*}/g, '}')              // 末尾カンマ除去
+      .replace(/,\s*]/g, ']')              // 末尾カンマ除去
+      .replace(/'/g, '"')                   // シングルクォートをダブルクォートに
+      .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')  // 引用符なしキーを修正
+
+    try {
+      return JSON.parse(cleaned)
+    } catch (e2) {
+      console.error('JSONパース2回目失敗:', (e2 as Error).message, '全テキスト:', jsonText)
+      throw new Error(`Gemini JSON parse error: ${(e1 as Error).message}. Raw text: ${jsonText.substring(0, 300)}`)
+    }
   }
 }
