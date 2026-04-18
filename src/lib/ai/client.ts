@@ -54,7 +54,9 @@ async function callGeminiAPI(imageBase64: string): Promise<ReceiptAnalysisResult
     ],
     generationConfig: {
       responseMimeType: 'application/json',
-      maxOutputTokens: 1000,
+      maxOutputTokens: 2000,
+      // Gemini 2.5のthinkingを無効化（JSON出力と競合するため）
+      thinkingConfig: { thinkingBudget: 0 },
     },
   }
 
@@ -71,13 +73,38 @@ async function callGeminiAPI(imageBase64: string): Promise<ReceiptAnalysisResult
   }
 
   const data = await response.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+  const parts = data.candidates?.[0]?.content?.parts
+  if (!parts || parts.length === 0) {
+    console.error('Gemini応答にパーツなし:', JSON.stringify(data).substring(0, 500))
+    throw new Error('No parts in Gemini response')
+  }
+
+  // 全パーツをログ出力（デバッグ用）
+  console.log(`Gemini応答パーツ数: ${parts.length}`)
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i]
+    if (p.text) {
+      console.log(`パーツ${i}: text(${p.text.length}文字) = ${p.text.substring(0, 100)}`)
+    } else {
+      console.log(`パーツ${i}: keys=${Object.keys(p).join(',')}`)
+    }
+  }
+
+  // テキストパーツを後ろから探す（思考パーツが先に来ることがあるため）
+  let text: string | undefined
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].text) {
+      text = parts[i].text
+      break
+    }
+  }
+
   if (!text) {
-    console.error('Gemini応答にテキストなし:', JSON.stringify(data).substring(0, 300))
+    console.error('Gemini応答にテキストなし:', JSON.stringify(data).substring(0, 500))
     throw new Error('No text in Gemini response')
   }
 
-  console.log('Gemini応答:', text.substring(0, 200))
+  console.log('Gemini応答(使用):', text.substring(0, 200))
   return parseGeminiJSON(text)
 }
 

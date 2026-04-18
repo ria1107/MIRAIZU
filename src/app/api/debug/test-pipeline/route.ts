@@ -49,11 +49,45 @@ export async function GET() {
     const imageBase64 = imgBuffer.toString('base64')
     steps.base64Length = imageBase64.length
 
-    // 3. Gemini解析テスト
-    steps.geminiModel = process.env.GEMINI_MODEL || '(default: gemini-2.5-flash)'
+    // 3. Gemini生レスポンス確認（デバッグ用）
+    const geminiModel = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim()
+    steps.geminiModel = geminiModel
     steps.geminiKeySet = !!process.env.GEMINI_API_KEY
     steps.geminiKeyLength = process.env.GEMINI_API_KEY?.length
 
+    // 小さなテストでGemini APIの応答構造を確認
+    try {
+      const testApiKey = process.env.GEMINI_API_KEY!.trim()
+      const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${testApiKey}`
+      const testRes = await fetch(testUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Return JSON: {"test": true}' }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            maxOutputTokens: 100,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }),
+      })
+      const testData = await testRes.json()
+      const testParts = testData.candidates?.[0]?.content?.parts
+      steps.geminiTestResponse = {
+        status: testRes.status,
+        partsCount: testParts?.length,
+        parts: testParts?.map((p: Record<string, unknown>, i: number) => ({
+          index: i,
+          hasText: !!p.text,
+          textPreview: typeof p.text === 'string' ? p.text.substring(0, 100) : undefined,
+          keys: Object.keys(p),
+        })),
+      }
+    } catch (e) {
+      steps.geminiTestError = e instanceof Error ? e.message : String(e)
+    }
+
+    // 4. 本番Gemini解析テスト
     const startTime = Date.now()
     try {
       const result = await analyzeReceipt(imageBase64)
@@ -63,7 +97,7 @@ export async function GET() {
         data: result,
       }
 
-      // 4. DB更新テスト（実際に更新する）
+      // 5. DB更新テスト（実際に更新する）
       const { error: updateError } = await supabase.from('receipts').update({
         status: 'analyzed' as const,
         vendor_name: result.vendor_name,
