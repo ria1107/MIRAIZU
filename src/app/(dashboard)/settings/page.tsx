@@ -5,7 +5,7 @@ import { Card, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { Badge } from '@/components/ui/badge'
-import { Save, Link as LinkIcon, Unlink, Copy, Check, RefreshCw, HardDrive, ExternalLink, FolderOpen } from 'lucide-react'
+import { Save, Link as LinkIcon, Unlink, Copy, Check, RefreshCw, ExternalLink, FolderOpen } from 'lucide-react'
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState({
@@ -29,11 +29,12 @@ export default function SettingsPage() {
 
   // Google Drive連携
   const [driveConnected, setDriveConnected] = useState(false)
-  const [driveFolder, setDriveFolder] = useState<{ name: string; url: string } | null>(null)
+  const [driveFolder, setDriveFolder] = useState<{ id: string | null; url: string | null } | null>(null)
   const [driveUploadedCount, setDriveUploadedCount] = useState(0)
-  const [driveError, setDriveError] = useState<string | null>(null)
-  const [driveTesting, setDriveTesting] = useState(false)
-  const [driveTestResult, setDriveTestResult] = useState<string | null>(null)
+  const [driveConnectedAt, setDriveConnectedAt] = useState<string | null>(null)
+  const [driveLoading, setDriveLoading] = useState(false)
+  const [driveDisconnecting, setDriveDisconnecting] = useState(false)
+  const [driveMessage, setDriveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     async function fetchData() {
@@ -72,7 +73,17 @@ export default function SettingsPage() {
           setDriveConnected(data.connected)
           if (data.folder) setDriveFolder(data.folder)
           if (data.uploadedCount !== undefined) setDriveUploadedCount(data.uploadedCount)
-          if (!data.connected && data.message) setDriveError(data.message)
+          if (data.connectedAt) setDriveConnectedAt(data.connectedAt)
+        }
+
+        // URLパラメータでOAuth結果を表示
+        const params = new URLSearchParams(window.location.search)
+        if (params.get('success') === 'google_connected') {
+          setDriveMessage({ type: 'success', text: 'Google Driveの連携が完了しました！' })
+          window.history.replaceState({}, '', '/settings')
+        } else if (params.get('error')) {
+          setDriveMessage({ type: 'error', text: 'Google Driveの連携に失敗しました。もう一度お試しください。' })
+          window.history.replaceState({}, '', '/settings')
         }
       } catch (e) {
         console.error('データ取得エラー:', e)
@@ -150,18 +161,28 @@ export default function SettingsPage() {
     }
   }
 
-  const handleDriveTest = async () => {
-    setDriveTesting(true)
-    setDriveTestResult(null)
+  const handleDriveConnect = () => {
+    setDriveLoading(true)
+    window.location.href = '/api/auth/google'
+  }
+
+  const handleDriveDisconnect = async () => {
+    if (!confirm('Google Drive連携を解除しますか？\n今後LINEから送った領収書画像はDriveに保存されなくなります。')) return
+    setDriveDisconnecting(true)
     try {
-      const res = await fetch('/api/drive/status', { method: 'POST' })
-      const data = await res.json()
-      setDriveTestResult(data.success ? 'success' : `error: ${data.message}`)
+      const res = await fetch('/api/drive/status', { method: 'DELETE' })
+      if (res.ok) {
+        setDriveConnected(false)
+        setDriveFolder(null)
+        setDriveConnectedAt(null)
+        setDriveUploadedCount(0)
+        setDriveMessage({ type: 'success', text: 'Google Drive連携を解除しました' })
+        setTimeout(() => setDriveMessage(null), 4000)
+      }
     } catch (e) {
-      setDriveTestResult('error: テスト中にエラーが発生しました')
-      console.error('Driveテストエラー:', e)
+      console.error('Drive切断エラー:', e)
     } finally {
-      setDriveTesting(false)
+      setDriveDisconnecting(false)
     }
   }
 
@@ -288,67 +309,59 @@ export default function SettingsPage() {
       <Card>
         <div className="flex items-center justify-between">
           <CardTitle>Google Drive連携</CardTitle>
-          {driveConnected && <Badge variant="success">接続済み</Badge>}
+          {driveConnected && <Badge variant="success">連携済み</Badge>}
         </div>
         <div className="mt-4">
+          {driveMessage && (
+            <div className={`mb-4 rounded-lg p-3 text-sm ${driveMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+              {driveMessage.text}
+            </div>
+          )}
           {driveConnected ? (
             <div className="space-y-4">
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <p className="text-sm text-green-800">
-                  <strong>Google Drive接続中</strong> — LINEから送信された領収書画像が自動保存されます。
+                  <strong>Google Drive連携中</strong> — LINEから送信した領収書画像が自動でDriveに保存されます。
                 </p>
-                {driveFolder && (
+                {driveFolder?.url && (
                   <div className="mt-2 flex items-center gap-2">
-                    <FolderOpen className="w-4 h-4 text-green-600" />
-                    <span className="text-sm text-green-700">保存先: {driveFolder.name}</span>
-                    {driveFolder.url && (
-                      <a href={driveFolder.url} target="_blank" rel="noopener noreferrer"
-                        className="text-green-600 hover:text-green-500">
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    )}
+                    <FolderOpen className="w-4 h-4 text-green-600 shrink-0" />
+                    <span className="text-sm text-green-700">保存先: MIRAIZU_領収書</span>
+                    <a href={driveFolder.url} target="_blank" rel="noopener noreferrer"
+                      className="text-green-600 hover:text-green-500 flex items-center gap-0.5">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span className="text-xs">Driveで開く</span>
+                    </a>
                   </div>
                 )}
-                <p className="text-xs text-green-600 mt-1">
-                  アップロード済み: {driveUploadedCount}件
-                </p>
+                <div className="mt-1 flex gap-4 text-xs text-green-600">
+                  {driveConnectedAt && (
+                    <span>連携日: {new Date(driveConnectedAt).toLocaleDateString('ja-JP')}</span>
+                  )}
+                  <span>保存済み: {driveUploadedCount}件</span>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Button variant="outline" onClick={handleDriveTest} disabled={driveTesting}>
-                  <HardDrive className="w-4 h-4 mr-1" />{driveTesting ? 'テスト中...' : '接続テスト'}
-                </Button>
-                {driveTestResult && (
-                  <span className={`text-sm ${driveTestResult === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                    {driveTestResult === 'success' ? '接続OK' : driveTestResult}
-                  </span>
-                )}
-              </div>
+              <Button variant="outline" onClick={handleDriveDisconnect} disabled={driveDisconnecting}>
+                <Unlink className="w-4 h-4 mr-1" />{driveDisconnecting ? '解除中...' : '連携を解除'}
+              </Button>
             </div>
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-gray-600">
-                解析済みの領収書画像をGoogle Driveに自動保存します。
+                Googleアカウントを連携すると、LINEから送った領収書画像が自動でご自身のGoogle Driveの「MIRAIZU_領収書」フォルダに保存されます。
               </p>
-              {driveError ? (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <p className="text-sm text-yellow-800">{driveError}</p>
-                  <div className="mt-3 bg-white border border-yellow-100 rounded p-3">
-                    <h4 className="font-medium text-yellow-900 text-sm mb-2">セットアップ手順</h4>
-                    <ol className="text-xs text-yellow-800 space-y-1 list-decimal list-inside">
-                      <li>Google Cloud Consoleでプロジェクトを作成</li>
-                      <li>Google Drive APIを有効化</li>
-                      <li>サービスアカウントを作成・鍵をダウンロード</li>
-                      <li>Google Driveで保存先フォルダを作成</li>
-                      <li>フォルダをサービスアカウントと共有</li>
-                      <li>環境変数を設定（Vercel）</li>
-                    </ol>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <p className="text-sm text-gray-500">Google Driveの接続状態を確認中...</p>
-                </div>
-              )}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-900 text-sm mb-2">連携後の動作</h4>
+                <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                  <li>LINE送信の領収書画像が自動でDriveに保存</li>
+                  <li>「MIRAIZU_領収書」フォルダが自動作成されます</li>
+                  <li>ファイル名: 日付_取引先名.jpg 形式</li>
+                </ul>
+              </div>
+              <Button onClick={handleDriveConnect} disabled={driveLoading}>
+                <LinkIcon className="w-4 h-4 mr-1" />
+                {driveLoading ? '移動中...' : 'Googleアカウントで連携'}
+              </Button>
             </div>
           )}
         </div>

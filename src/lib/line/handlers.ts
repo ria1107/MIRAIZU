@@ -84,24 +84,39 @@ async function handleImageMessage(messageId: string, lineUserId: string, replyTo
     const analysis = await analyzeReceipt(imageBase64)
     console.log('AI解析結果:', JSON.stringify(analysis))
 
-    // 5. Google Driveにアップロード（設定されている場合）
+    // 5. Google Driveにアップロード（ユーザーが連携している場合）
     let driveUrl: string | null = null
     let driveFileId: string | null = null
-    if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_DRIVE_FOLDER_ID) {
-      try {
+    try {
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('google_drive_refresh_token, google_drive_folder_id')
+        .eq('id', connection.user_id)
+        .single()
+
+      const profile = userProfile as { google_drive_refresh_token?: string | null; google_drive_folder_id?: string | null } | null
+      if (profile?.google_drive_refresh_token && profile?.google_drive_folder_id) {
         console.log('Google Driveアップロード中...')
         const dateStr = analysis.transaction_date || new Date().toISOString().split('T')[0]
-        const vendorStr = analysis.vendor_name || 'unknown'
+        const vendorStr = (analysis.vendor_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_')
         const driveFileName = `${dateStr}_${vendorStr}_${receipt.id.substring(0, 8)}.jpg`
-        const driveResult = await uploadToDrive(imageBuffer, driveFileName, 'image/jpeg')
+        const driveResult = await uploadToDrive(
+          imageBuffer,
+          driveFileName,
+          'image/jpeg',
+          profile.google_drive_refresh_token,
+          profile.google_drive_folder_id,
+        )
         if (driveResult) {
           driveFileId = driveResult.fileId
           driveUrl = driveResult.webViewLink
           console.log('Google Driveアップロード成功:', driveFileId)
         }
-      } catch (driveErr) {
-        console.error('Google Driveアップロードエラー（処理は継続）:', driveErr)
+      } else {
+        console.log('Google Drive未連携のためスキップ')
       }
+    } catch (driveErr) {
+      console.error('Google Driveアップロードエラー（処理は継続）:', driveErr)
     }
 
     // 6. 解析結果をDB更新
