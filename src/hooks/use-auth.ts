@@ -21,6 +21,10 @@ const mockProfile: Profile = {
   email: 'demo@example.com',
   company_name: '株式会社サンプル',
   fiscal_year_start: 4,
+  google_drive_refresh_token: null,
+  google_drive_folder_id: null,
+  google_drive_folder_url: null,
+  google_drive_connected_at: null,
   created_at: '2025-01-01T00:00:00Z',
   updated_at: '2025-01-01T00:00:00Z',
 }
