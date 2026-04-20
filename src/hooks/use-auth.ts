@@ -98,14 +98,12 @@ export function useAuth() {
     return () => subscription.unsubscribe()
   }, [])
 
-  const signOut = async () => {
+  const signOut = () => {
     if (USE_MOCKS) {
       window.location.href = '/login'
       return
     }
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/login'
+    window.location.href = '/api/auth/logout'
   }
 
   return { user, profile, loading, signOut }
