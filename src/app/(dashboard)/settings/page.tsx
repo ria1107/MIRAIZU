@@ -268,38 +268,74 @@ export default function SettingsPage() {
                 LINEアカウントを連携すると、LINEから領収書画像を送信して自動解析できます。
               </p>
 
+              {/* STEP 1: 友だち追加 */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-medium text-blue-900 text-sm mb-2">連携手順</h4>
-                <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-                  <li>下のボタンで連携コードを発行</li>
-                  <li>LINEで「MIRAIZU」を友だち追加</li>
-                  <li>発行された6桁のコードをLINEで送信</li>
-                </ol>
-              </div>
-
-              {connectCode ? (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-                  <p className="text-sm text-gray-600 mb-2">連携コード（10分間有効）</p>
-                  <div className="flex items-center justify-center gap-3">
-                    <span className="text-3xl font-mono font-bold tracking-widest text-gray-900">{connectCode}</span>
-                    <button onClick={handleCopyCode} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
-                      {copied ? <Check className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5 text-gray-500" />}
-                    </button>
-                  </div>
-                  {codeExpiry && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      有効期限: {new Date(codeExpiry).toLocaleTimeString('ja-JP')}
+                <h4 className="font-medium text-blue-900 text-sm mb-3">
+                  <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-xs rounded-full mr-2">1</span>
+                  MIRAIZUを友だち追加
+                </h4>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  {process.env.NEXT_PUBLIC_LINE_BOT_BASIC_ID ? (
+                    <>
+                      {/* QRコード */}
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`https://line.me/R/ti/p/${process.env.NEXT_PUBLIC_LINE_BOT_BASIC_ID}`)}`}
+                        alt="LINE友だち追加QRコード"
+                        className="w-28 h-28 border border-gray-200 rounded-lg"
+                      />
+                      <div className="space-y-2">
+                        <p className="text-sm text-blue-800">QRコードを読み取るか、ボタンをタップして友だち追加してください。</p>
+                        <a
+                          href={`https://line.me/R/ti/p/${process.env.NEXT_PUBLIC_LINE_BOT_BASIC_ID}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-[#06C755] text-white text-sm font-medium rounded-lg hover:bg-[#05b34d] transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          LINEで友だち追加
+                        </a>
+                        <p className="text-xs text-blue-600">Basic ID: {process.env.NEXT_PUBLIC_LINE_BOT_BASIC_ID}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-blue-800">
+                      LINEで「<strong>MIRAIZU</strong>」を検索して友だち追加してください。
                     </p>
                   )}
-                  <button onClick={handleGenerateCode} className="mt-3 text-sm text-blue-600 hover:text-blue-500 flex items-center gap-1 mx-auto">
-                    <RefreshCw className="w-3 h-3" />新しいコードを発行
-                  </button>
                 </div>
-              ) : (
-                <Button onClick={handleGenerateCode} disabled={generatingCode}>
-                  <LinkIcon className="w-4 h-4 mr-1" />{generatingCode ? 'コード生成中...' : '連携コードを発行'}
-                </Button>
-              )}
+              </div>
+
+              {/* STEP 2: 連携コード発行 */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h4 className="font-medium text-gray-900 text-sm mb-3">
+                  <span className="inline-flex items-center justify-center w-5 h-5 bg-gray-600 text-white text-xs rounded-full mr-2">2</span>
+                  連携コードを発行してLINEで送信
+                </h4>
+                {connectCode ? (
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600 mb-2">連携コード（10分間有効）</p>
+                    <div className="flex items-center justify-center gap-3">
+                      <span className="text-3xl font-mono font-bold tracking-widest text-gray-900">{connectCode}</span>
+                      <button onClick={handleCopyCode} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                        {copied ? <Check className="w-5 h-5 text-green-600" /> : <Copy className="w-5 h-5 text-gray-500" />}
+                      </button>
+                    </div>
+                    {codeExpiry && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        有効期限: {new Date(codeExpiry).toLocaleTimeString('ja-JP')}
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-600 mt-3">このコードをMIRAIZUのLINEチャットに送信してください。</p>
+                    <button onClick={handleGenerateCode} className="mt-3 text-sm text-blue-600 hover:text-blue-500 flex items-center gap-1 mx-auto">
+                      <RefreshCw className="w-3 h-3" />新しいコードを発行
+                    </button>
+                  </div>
+                ) : (
+                  <Button onClick={handleGenerateCode} disabled={generatingCode}>
+                    <LinkIcon className="w-4 h-4 mr-1" />{generatingCode ? 'コード生成中...' : '連携コードを発行'}
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>
