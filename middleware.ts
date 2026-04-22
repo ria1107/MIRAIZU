@@ -10,9 +10,11 @@ export function middleware(request: NextRequest) {
   const isTopPage = pathname === '/'
 
   // Supabaseのセッションクッキーが存在するか確認（外部API呼び出しなし）
+  // @supabase/ssr v0.5以降はCookieを分割保存するため includes で判定
+  // 例: sb-xxx-auth-token, sb-xxx-auth-token.0, sb-xxx-auth-token.1
   const cookies = request.cookies.getAll()
   const hasSession = cookies.some(
-    (c) => c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
+    (c) => c.name.startsWith('sb-') && c.name.includes('-auth-token')
   )
 
   // 未ログインでダッシュボード系にアクセス → ログインへ
