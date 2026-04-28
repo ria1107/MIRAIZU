@@ -19,7 +19,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .select()
       .single()
 
-    if (error || !data) return NextResponse.json({ error: '更新に失敗しました' }, { status: 500 })
+    if (error || !data) {
+      console.error('顧客更新エラー:', error)
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    }
     return NextResponse.json(data)
   } catch (e) {
     console.error('顧客更新エラー:', e)
@@ -41,7 +44,10 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
       .eq('id', id)
       .eq('user_id', user.id)
 
-    if (error) return NextResponse.json({ error: '削除に失敗しました' }, { status: 500 })
+    if (error) {
+      console.error('顧客削除エラー:', error)
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    }
     return NextResponse.json({ message: '削除しました' })
   } catch (e) {
     console.error('顧客削除エラー:', e)

@@ -38,20 +38,26 @@ export async function PUT(request: NextRequest) {
     const body = await request.json()
     const { display_name, company_name, fiscal_year_start } = body
 
+    const fiscalMonth = parseInt(fiscal_year_start)
+    if (isNaN(fiscalMonth) || fiscalMonth < 1 || fiscalMonth > 12) {
+      return NextResponse.json({ error: '決算開始月は1〜12の数字で入力してください' }, { status: 400 })
+    }
+
     const admin = createAdminClient()
     const { data, error } = await admin
       .from('profiles')
       .update({
-        display_name,
-        company_name,
-        fiscal_year_start: parseInt(fiscal_year_start) || 4,
+        display_name: display_name ? String(display_name).slice(0, 100) : null,
+        company_name: company_name ? String(company_name).slice(0, 200) : null,
+        fiscal_year_start: fiscalMonth,
       })
       .eq('id', user.id)
       .select()
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('プロフィール更新エラー:', error)
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 
     return NextResponse.json({ profile: data })

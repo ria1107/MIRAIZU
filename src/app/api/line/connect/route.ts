@@ -12,8 +12,10 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 6桁のランダムコード生成
-    const code = Math.floor(100000 + Math.random() * 900000).toString()
+    // 6桁のランダムコード生成（暗号的に安全な乱数）
+    const array = new Uint32Array(1)
+    crypto.getRandomValues(array)
+    const code = (100000 + (array[0] % 900000)).toString()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10分有効
 
     const admin = createAdminClient()
@@ -35,7 +37,7 @@ export async function POST() {
 
     if (error) {
       console.error('連携コード保存エラー:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 
     return NextResponse.json({ code, expiresAt: expiresAt.toISOString() })

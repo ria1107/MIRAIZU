@@ -2,17 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+const VALID_STATUSES = ['pending', 'processing', 'analyzed', 'confirmed', 'error']
+const VALID_RECEIPT_TYPES = ['expense', 'sales']
+
+// raw_ai_response はサーバー内部用。クライアントには返さない
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sanitizeReceipt(r: any) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { raw_ai_response, ...safe } = r
+  return safe
+}
+
 export async function GET(request: NextRequest) {
   try {
-    // まずサーバーサイドでユーザーセッションを確認
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // admin clientでRLSバイパスして取得（確実にデータが返る）
     const admin = createAdminClient()
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
@@ -24,7 +30,7 @@ export async function GET(request: NextRequest) {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
-    if (status) {
+    if (status && VALID_STATUSES.includes(status)) {
       query = query.eq('status', status)
     }
 
@@ -32,15 +38,15 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('レシート取得エラー:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 
-    let receipts = data || []
+    let receipts = (data || []).map(sanitizeReceipt)
 
-    // 検索フィルタ（クライアント側）
     if (search) {
+      const q = search.slice(0, 100)
       receipts = receipts.filter(
-        r => r.vendor_name?.includes(search) || r.description?.includes(search)
+        r => r.vendor_name?.includes(q) || r.description?.includes(q)
       )
     }
 
@@ -58,28 +64,39 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
-    const admin = createAdminClient()
 
+    const receiptType = VALID_RECEIPT_TYPES.includes(body.receipt_type) ? body.receipt_type : 'sales'
+    const amount = body.amount != null ? Number(body.amount) : null
+    const taxAmount = body.tax_amount != null ? Number(body.tax_amount) : null
+
+    if (amount != null && (isNaN(amount) || amount < 0)) {
+      return NextResponse.json({ error: '金額が不正です' }, { status: 400 })
+    }
+
+    const admin = createAdminClient()
     const { data, error } = await admin
       .from('receipts')
       .insert({
         user_id: user.id,
-        receipt_type: body.receipt_type || 'sales',
-        status: body.status || 'confirmed',
-        vendor_name: body.vendor_name || null,
-        amount: body.amount ? Number(body.amount) : null,
-        tax_amount: body.tax_amount ? Number(body.tax_amount) : null,
+        receipt_type: receiptType,
+        status: 'confirmed',
+        vendor_name: body.vendor_name ? String(body.vendor_name).slice(0, 255) : null,
+        amount,
+        tax_amount: taxAmount != null && !isNaN(taxAmount) ? taxAmount : null,
         transaction_date: body.transaction_date || null,
-        description: body.description || null,
-        category: body.category || null,
-        payment_method: body.payment_method || null,
-        source: body.source || 'web_upload',
+        description: body.description ? String(body.description).slice(0, 1000) : null,
+        category: body.category ? String(body.category).slice(0, 100) : null,
+        payment_method: body.payment_method ? String(body.payment_method).slice(0, 100) : null,
+        source: 'web_upload',
       })
       .select()
       .single()
 
-    if (error || !data) return NextResponse.json({ error: '作成に失敗しました' }, { status: 500 })
-    return NextResponse.json(data, { status: 201 })
+    if (error || !data) {
+      console.error('レシート作成エラー:', error)
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    }
+    return NextResponse.json(sanitizeReceipt(data), { status: 201 })
   } catch (e) {
     console.error('レシート作成エラー:', e)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

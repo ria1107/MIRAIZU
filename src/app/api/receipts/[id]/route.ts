@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sanitizeReceipt(r: any) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { raw_ai_response, ...safe } = r
+  return safe
+}
+
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -18,7 +25,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       .single()
 
     if (error || !data) return NextResponse.json({ error: '見つかりません' }, { status: 404 })
-    return NextResponse.json(data)
+    return NextResponse.json(sanitizeReceipt(data))
   } catch (e) {
     console.error('領収書取得エラー:', e)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -50,8 +57,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .select()
       .single()
 
-    if (error || !data) return NextResponse.json({ error: '更新に失敗しました' }, { status: 500 })
-    return NextResponse.json(data)
+    if (error || !data) {
+      console.error('領収書更新エラー:', error)
+      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    }
+    return NextResponse.json(sanitizeReceipt(data))
   } catch (e) {
     console.error('領収書更新エラー:', e)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

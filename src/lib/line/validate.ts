@@ -12,23 +12,12 @@ export function validateLineSignature(body: string, signature: string): boolean 
     .update(body)
     .digest('base64')
 
-  // 長さが異なる場合は不一致
-  if (hash.length !== signature.length) {
-    console.error('LINE signature length mismatch', {
-      hashLen: hash.length,
-      sigLen: signature.length,
-      secretLen: channelSecret.length,
-    })
-    return false
-  }
-
   try {
     return crypto.timingSafeEqual(
       Buffer.from(hash),
       Buffer.from(signature)
     )
-  } catch (e) {
-    console.error('LINE signature comparison error:', e)
+  } catch {
     return false
   }
 }
