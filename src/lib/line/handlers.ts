@@ -14,8 +14,8 @@ export async function handleMessageEvent(event: LineWebhookEvent) {
     await handleImageMessage(message.id, lineUserId, replyToken)
   } else if (message.type === 'text') {
     const text = message.text?.trim() || ''
-    // 6桁の数字 → 連携コード処理
-    if (/^\d{6}$/.test(text)) {
+    // 6桁英数字（英字を含む）→ 連携コード処理（純粋な数字のみは金額と区別するため除外）
+    if (/^[A-Z0-9]{6}$/.test(text) && /[A-Z]/.test(text)) {
       await handleConnectCode(text, lineUserId, replyToken)
     } else if (text === '売上' || text === '売上登録') {
       await handleSalesFlow(lineUserId, replyToken, 'start', text)

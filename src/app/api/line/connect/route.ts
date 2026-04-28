@@ -12,10 +12,12 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 6桁のランダムコード生成（暗号的に安全な乱数）
-    const array = new Uint32Array(1)
+    // 6桁の英数字コード生成（数字のみだと売上金額と誤判定されるため英字を含める）
+    // 紛らわしい文字(O,0,I,1,L)を除いた32文字から選択
+    const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+    const array = new Uint8Array(6)
     crypto.getRandomValues(array)
-    const code = (100000 + (array[0] % 900000)).toString()
+    const code = Array.from(array).map(b => CHARS[b % CHARS.length]).join('')
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10分有効
 
     const admin = createAdminClient()
