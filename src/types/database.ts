@@ -98,6 +98,42 @@ export interface AccountCategory {
   created_at: string
 }
 
+export interface Customer {
+  id: string
+  user_id: string
+  name: string
+  email: string | null
+  phone: string | null
+  address: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SaleItem {
+  id: string
+  user_id: string
+  name: string
+  default_price: number | null
+  description: string | null
+  is_active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LineSession {
+  id: string
+  line_user_id: string
+  user_id: string | null
+  session_type: string
+  step: string
+  data: Json
+  expires_at: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -130,6 +166,21 @@ export interface Database {
         Row: AccountCategory
         Insert: Omit<AccountCategory, 'id' | 'created_at'>
         Update: Partial<Omit<AccountCategory, 'id' | 'created_at'>>
+      }
+      customers: {
+        Row: Customer
+        Insert: Omit<Customer, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Customer, 'id' | 'created_at'>>
+      }
+      sale_items: {
+        Row: SaleItem
+        Insert: Omit<SaleItem, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<SaleItem, 'id' | 'created_at'>>
+      }
+      line_sessions: {
+        Row: LineSession
+        Insert: Omit<LineSession, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<LineSession, 'id' | 'created_at'>>
       }
     }
   }

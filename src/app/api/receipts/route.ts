@@ -50,3 +50,38 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const body = await request.json()
+    const admin = createAdminClient()
+
+    const { data, error } = await admin
+      .from('receipts')
+      .insert({
+        user_id: user.id,
+        receipt_type: body.receipt_type || 'sales',
+        status: body.status || 'confirmed',
+        vendor_name: body.vendor_name || null,
+        amount: body.amount ? Number(body.amount) : null,
+        tax_amount: body.tax_amount ? Number(body.tax_amount) : null,
+        transaction_date: body.transaction_date || null,
+        description: body.description || null,
+        category: body.category || null,
+        payment_method: body.payment_method || null,
+        source: body.source || 'web_upload',
+      })
+      .select()
+      .single()
+
+    if (error || !data) return NextResponse.json({ error: '作成に失敗しました' }, { status: 500 })
+    return NextResponse.json(data, { status: 201 })
+  } catch (e) {
+    console.error('レシート作成エラー:', e)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}

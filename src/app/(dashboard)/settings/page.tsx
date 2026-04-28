@@ -5,7 +5,8 @@ import { Card, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { Badge } from '@/components/ui/badge'
-import { Save, Link as LinkIcon, Unlink, Copy, Check, RefreshCw, ExternalLink, FolderOpen } from 'lucide-react'
+import { Save, Link as LinkIcon, Unlink, Copy, Check, RefreshCw, ExternalLink, FolderOpen, Plus, Trash2 } from 'lucide-react'
+import { SaleItem } from '@/types/database'
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState({
@@ -27,6 +28,12 @@ export default function SettingsPage() {
   const [copied, setCopied] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
+  // 売上項目
+  const [saleItems, setSaleItems] = useState<SaleItem[]>([])
+  const [newItemName, setNewItemName] = useState('')
+  const [newItemPrice, setNewItemPrice] = useState('')
+  const [addingItem, setAddingItem] = useState(false)
+
   // Google Drive連携
   const [driveConnected, setDriveConnected] = useState(false)
   const [driveFolder, setDriveFolder] = useState<{ id: string | null; url: string | null } | null>(null)
@@ -39,10 +46,11 @@ export default function SettingsPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [profileRes, lineRes, driveRes] = await Promise.all([
+        const [profileRes, lineRes, driveRes, saleItemsRes] = await Promise.all([
           fetch('/api/profile'),
           fetch('/api/line/connect'),
           fetch('/api/drive/status'),
+          fetch('/api/sale-items'),
         ])
 
         if (profileRes.status === 401) {
@@ -75,6 +83,8 @@ export default function SettingsPage() {
           if (data.uploadedCount !== undefined) setDriveUploadedCount(data.uploadedCount)
           if (data.connectedAt) setDriveConnectedAt(data.connectedAt)
         }
+
+        if (saleItemsRes.ok) setSaleItems(await saleItemsRes.json())
 
         // URLパラメータでOAuth結果を表示
         const params = new URLSearchParams(window.location.search)
@@ -159,6 +169,30 @@ export default function SettingsPage() {
     } finally {
       setDisconnecting(false)
     }
+  }
+
+  const handleAddSaleItem = async () => {
+    if (!newItemName.trim()) return
+    setAddingItem(true)
+    try {
+      const res = await fetch('/api/sale-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newItemName.trim(), default_price: newItemPrice ? Number(newItemPrice) : null }),
+      })
+      if (res.ok) {
+        const item = await res.json()
+        setSaleItems(prev => [...prev, item])
+        setNewItemName('')
+        setNewItemPrice('')
+      }
+    } catch (e) { console.error('売上項目追加エラー:', e) }
+    finally { setAddingItem(false) }
+  }
+
+  const handleDeleteSaleItem = async (id: string) => {
+    const res = await fetch(`/api/sale-items/${id}`, { method: 'DELETE' })
+    if (res.ok) setSaleItems(prev => prev.filter(i => i.id !== id))
   }
 
   const handleDriveConnect = () => {
@@ -338,6 +372,43 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      </Card>
+
+      {/* 売上項目 */}
+      <Card>
+        <CardTitle>売上項目</CardTitle>
+        <p className="text-sm text-gray-500 mt-1">LINEから売上登録する際に選択肢として表示されます</p>
+        <div className="mt-4 space-y-3">
+          {saleItems.length > 0 && (
+            <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+              {saleItems.map(item => (
+                <div key={item.id} className="flex items-center justify-between px-4 py-2.5 bg-white hover:bg-gray-50">
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">{item.name}</span>
+                    {item.default_price && (
+                      <span className="ml-2 text-sm text-gray-500">¥{item.default_price.toLocaleString()}</span>
+                    )}
+                  </div>
+                  <button onClick={() => handleDeleteSaleItem(item.id)} className="p-1 text-gray-400 hover:text-red-600 rounded">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input value={newItemName} onChange={e => setNewItemName(e.target.value)}
+              placeholder="項目名（例: コンサルティング）"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              onKeyDown={e => e.key === 'Enter' && handleAddSaleItem()} />
+            <input type="number" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)}
+              placeholder="デフォルト金額"
+              className="w-36 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+            <Button onClick={handleAddSaleItem} disabled={addingItem || !newItemName.trim()}>
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </Card>
 

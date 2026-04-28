@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Receipt, TrendingDown, TrendingUp, Settings, CreditCard } from 'lucide-react'
+import { LayoutDashboard, Receipt, TrendingDown, TrendingUp, Settings, CreditCard, Users } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
   { href: '/receipts', label: '領収書', icon: Receipt },
   { href: '/expenses', label: '経費', icon: TrendingDown },
   { href: '/sales', label: '売上', icon: TrendingUp },
+  { href: '/customers', label: '顧客', icon: Users },
   { href: '/subscription', label: 'プラン', icon: CreditCard },
   { href: '/settings', label: '設定', icon: Settings },
 ]

@@ -8,16 +8,237 @@ import { formatCurrency } from '@/lib/utils/format'
 export async function handleMessageEvent(event: LineWebhookEvent) {
   if (!event.message || !event.replyToken) return
   const { message, source, replyToken } = event
+  const lineUserId = source.userId!
 
   if (message.type === 'image') {
-    await handleImageMessage(message.id, source.userId!, replyToken)
+    await handleImageMessage(message.id, lineUserId, replyToken)
   } else if (message.type === 'text') {
     const text = message.text?.trim() || ''
     // 6桁の数字 → 連携コード処理
     if (/^\d{6}$/.test(text)) {
-      await handleConnectCode(text, source.userId!, replyToken)
+      await handleConnectCode(text, lineUserId, replyToken)
+    } else if (text === '売上' || text === '売上登録') {
+      await handleSalesFlow(lineUserId, replyToken, 'start', text)
     } else {
-      await replyText(replyToken, 'MIRAIZUです。\n\n・領収書の画像を送信 → 自動解析\n・6桁の連携コードを送信 → アカウント連携')
+      // アクティブなセッションがあれば会話を続ける
+      const supabase = createAdminClient()
+      const { data: session } = await supabase
+        .from('line_sessions')
+        .select('*')
+        .eq('line_user_id', lineUserId)
+        .eq('session_type', 'sales')
+        .gt('expires_at', new Date().toISOString())
+        .single()
+
+      if (session) {
+        await handleSalesFlow(lineUserId, replyToken, session.step, text, session.data as Record<string, unknown>)
+      } else {
+        await replyText(replyToken, 'MIRAIZUです。\n\n・領収書の画像を送信 → 自動解析\n・「売上」と送信 → 売上登録\n・6桁の連携コードを送信 → アカウント連携')
+      }
+    }
+  }
+}
+
+async function handleSalesFlow(
+  lineUserId: string,
+  replyToken: string,
+  step: string,
+  input: string,
+  sessionData: Record<string, unknown> = {}
+) {
+  const supabase = createAdminClient()
+
+  // LINE連携確認
+  const { data: connection } = await supabase
+    .from('line_connections')
+    .select('user_id')
+    .eq('line_user_id', lineUserId)
+    .single()
+
+  if (!connection) {
+    await replyText(replyToken, 'アカウントが連携されていません。Webアプリからアカウント連携を行ってください。')
+    return
+  }
+  const userId = connection.user_id
+
+  async function upsertSession(newStep: string, data: Record<string, unknown>) {
+    await supabase.from('line_sessions').upsert({
+      line_user_id: lineUserId,
+      user_id: userId,
+      session_type: 'sales',
+      step: newStep,
+      data,
+      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    }, { onConflict: 'line_user_id' })
+  }
+
+  async function deleteSession() {
+    await supabase.from('line_sessions').delete().eq('line_user_id', lineUserId)
+  }
+
+  if (step === 'start') {
+    // 売上項目一覧取得
+    const { data: items } = await supabase
+      .from('sale_items')
+      .select('id, name, default_price')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .order('sort_order')
+      .limit(13)
+
+    if (!items || items.length === 0) {
+      await upsertSession('enter_amount', {})
+      await replyText(replyToken, '売上を登録します。\n\n金額を入力してください（数字のみ）\n例: 50000')
+      return
+    }
+
+    await upsertSession('select_item', { items })
+    const client = getLineClient()
+    await client.replyMessage({
+      replyToken,
+      messages: [{
+        type: 'text',
+        text: '売上項目を選択してください',
+        quickReply: {
+          items: [
+            ...items.map(i => ({
+              type: 'action' as const,
+              action: { type: 'message' as const, label: i.name.slice(0, 20), text: i.name },
+            })),
+            { type: 'action' as const, action: { type: 'message' as const, label: 'その他', text: 'その他' } },
+          ],
+        },
+      }],
+    })
+    return
+  }
+
+  if (step === 'select_item') {
+    if (input === 'キャンセル') { await deleteSession(); await replyText(replyToken, 'キャンセルしました。'); return }
+    const items = (sessionData.items as Array<{ id: string; name: string; default_price: number | null }>) || []
+    const selected = items.find(i => i.name === input)
+    const itemName = selected?.name || (input !== 'その他' ? input : '')
+    const defaultPrice = selected?.default_price
+
+    // 顧客一覧取得
+    const { data: customers } = await supabase
+      .from('customers')
+      .select('id, name')
+      .eq('user_id', userId)
+      .order('name')
+      .limit(13)
+
+    const newData = { ...sessionData, item_name: itemName, item_id: selected?.id || null, default_price: defaultPrice }
+
+    if (!customers || customers.length === 0) {
+      await upsertSession('enter_amount', newData)
+      const msg = defaultPrice
+        ? `金額を入力してください（デフォルト: ¥${defaultPrice.toLocaleString()}）\n変更がなければそのまま入力してください`
+        : '金額を入力してください（数字のみ）\n例: 50000'
+      await replyText(replyToken, msg)
+      return
+    }
+
+    await upsertSession('select_customer', newData)
+    const client = getLineClient()
+    await client.replyMessage({
+      replyToken,
+      messages: [{
+        type: 'text',
+        text: '顧客を選択してください',
+        quickReply: {
+          items: [
+            ...customers.map(c => ({
+              type: 'action' as const,
+              action: { type: 'message' as const, label: c.name.slice(0, 20), text: c.name },
+            })),
+            { type: 'action' as const, action: { type: 'message' as const, label: 'その他・なし', text: 'その他' } },
+          ],
+        },
+      }],
+    })
+    return
+  }
+
+  if (step === 'select_customer') {
+    if (input === 'キャンセル') { await deleteSession(); await replyText(replyToken, 'キャンセルしました。'); return }
+    const customerName = input !== 'その他' ? input : ''
+    const { data: customers } = await supabase.from('customers').select('id, name').eq('user_id', userId)
+    const customer = customers?.find(c => c.name === customerName)
+    const newData = { ...sessionData, customer_name: customerName, customer_id: customer?.id || null }
+
+    await upsertSession('enter_amount', newData)
+    const defaultPrice = sessionData.default_price as number | null
+    const msg = defaultPrice
+      ? `金額を入力してください（デフォルト: ¥${defaultPrice.toLocaleString()}）`
+      : '金額を入力してください（数字のみ）\n例: 50000'
+    await replyText(replyToken, msg)
+    return
+  }
+
+  if (step === 'enter_amount') {
+    if (input === 'キャンセル') { await deleteSession(); await replyText(replyToken, 'キャンセルしました。'); return }
+    const amount = Number(input.replace(/[,，￥¥]/g, '').trim())
+    if (isNaN(amount) || amount <= 0) {
+      await replyText(replyToken, '金額を数字で入力してください\n例: 50000')
+      return
+    }
+
+    const itemName = sessionData.item_name as string || ''
+    const customerName = sessionData.customer_name as string || ''
+    const confirmText = [
+      '以下の内容で登録します',
+      itemName && `項目: ${itemName}`,
+      customerName && `顧客: ${customerName}`,
+      `金額: ¥${amount.toLocaleString()}`,
+      `日付: ${new Date().toLocaleDateString('ja-JP')}`,
+    ].filter(Boolean).join('\n')
+
+    await upsertSession('confirm', { ...sessionData, amount })
+    const client = getLineClient()
+    await client.replyMessage({
+      replyToken,
+      messages: [{
+        type: 'text',
+        text: confirmText,
+        quickReply: {
+          items: [
+            { type: 'action' as const, action: { type: 'message' as const, label: '✅ 確定', text: '確定' } },
+            { type: 'action' as const, action: { type: 'message' as const, label: '❌ キャンセル', text: 'キャンセル' } },
+          ],
+        },
+      }],
+    })
+    return
+  }
+
+  if (step === 'confirm') {
+    if (input === 'キャンセル') { await deleteSession(); await replyText(replyToken, 'キャンセルしました。'); return }
+    if (input !== '確定') { await replyText(replyToken, '「確定」または「キャンセル」で返信してください'); return }
+
+    const amount = sessionData.amount as number
+    const itemName = sessionData.item_name as string || ''
+    const customerName = sessionData.customer_name as string || ''
+    const vendorName = customerName || itemName || '売上'
+    const description = [itemName && `項目: ${itemName}`, customerName && `顧客: ${customerName}`].filter(Boolean).join(' / ')
+    const today = new Date().toISOString().split('T')[0]
+
+    const { error } = await supabase.from('receipts').insert({
+      user_id: userId,
+      receipt_type: 'sales',
+      status: 'confirmed',
+      vendor_name: vendorName,
+      amount,
+      transaction_date: today,
+      description: description || null,
+      source: 'line',
+    })
+
+    await deleteSession()
+    if (error) {
+      await replyText(replyToken, '登録に失敗しました。もう一度お試しください。')
+    } else {
+      await replyText(replyToken, `✅ 売上を登録しました\n\n金額: ¥${amount.toLocaleString()}\n日付: ${today}${itemName ? `\n項目: ${itemName}` : ''}${customerName ? `\n顧客: ${customerName}` : ''}`)
     }
   }
 }
