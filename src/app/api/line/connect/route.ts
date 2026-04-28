@@ -20,6 +20,14 @@ export async function POST() {
 
     const admin = createAdminClient()
 
+    // プロフィールが存在しない場合は自動作成（新規ユーザー対応）
+    await admin.from('profiles').upsert({
+      id: user.id,
+      email: user.email || '',
+      display_name: (user.user_metadata?.display_name as string) || user.email?.split('@')[0] || '',
+      fiscal_year_start: 4,
+    }, { onConflict: 'id', ignoreDuplicates: true })
+
     // 既存の未使用コードを削除
     await admin
       .from('line_connect_codes')

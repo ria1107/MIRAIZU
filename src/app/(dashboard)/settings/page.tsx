@@ -25,6 +25,7 @@ export default function SettingsPage() {
   const [connectCode, setConnectCode] = useState<string | null>(null)
   const [codeExpiry, setCodeExpiry] = useState<string | null>(null)
   const [generatingCode, setGeneratingCode] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
@@ -133,15 +134,19 @@ export default function SettingsPage() {
   const handleGenerateCode = async () => {
     setGeneratingCode(true)
     setCopied(false)
+    setCodeError(null)
     try {
       const res = await fetch('/api/line/connect', { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
         setConnectCode(data.code)
         setCodeExpiry(data.expiresAt)
+      } else {
+        setCodeError('連携コードの生成に失敗しました。もう一度お試しください。')
       }
     } catch (e) {
       console.error('コード生成エラー:', e)
+      setCodeError('連携コードの生成に失敗しました。もう一度お試しください。')
     } finally {
       setGeneratingCode(false)
     }
@@ -345,6 +350,11 @@ export default function SettingsPage() {
                   <span className="inline-flex items-center justify-center w-5 h-5 bg-gray-600 text-white text-xs rounded-full mr-2">2</span>
                   連携コードを発行してLINEで送信
                 </h4>
+                {codeError && (
+                  <div className="mb-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                    {codeError}
+                  </div>
+                )}
                 {connectCode ? (
                   <div className="text-center">
                     <p className="text-sm text-gray-600 mb-2">連携コード（10分間有効）</p>
